@@ -31,7 +31,7 @@ class GNSSTargetMisfitPlot(PlotConfig):
         default=(30., 30.),
         help='width and length of the figure in cm')
     show_topo = Bool.T(
-        default=True,
+        default=False,
         help='show topography')
     show_grid = Bool.T(
         default=True,
@@ -142,16 +142,18 @@ displacements derived from best rupture model (red).
                 show_rivers=self.show_rivers,
                 color_wet=(216, 242, 254),
                 color_dry=(238, 236, 230))
-
-            if sta.up:
-                offset_scale = num.array(
-                    [num.sqrt(s.east.shift**2 + s.north.shift**2 + s.up.shift**2)
-                    for s in campaign.stations + model_camp.stations]).max()
-            else:
-                offset_scale = num.array(
-                    [num.sqrt(s.east.shift**2 + s.north.shift**2)
-                    for s in campaign.stations + model_camp.stations]).max()
-
+            
+            for s in campaign.stations + model_camp.stations:
+                if s.east and s.north and s.up:
+                    offset_scale = num.array(
+                        [num.sqrt(s.east.shift**2 + \
+                                  s.north.shift**2 + \
+                                  s.up.shift**2)]).max()
+                elif s.east and s.north and not s.up:
+                    offset_scale = num.array(
+                        [num.sqrt(s.east.shift**2 + \
+                                  s.north.shift**2)]).max()
+              
             if vertical:
                 m.add_gnss_campaign(campaign, psxy_style={
                     'G': 'black',
@@ -267,8 +269,19 @@ components).
 
         for target in targets:
             target.set_dataset(dataset)
-            ws = target.station_weights / target.station_weights.max()
-            if ws.size == 0:
+            comp_weights = target.component_weights()[0]
+
+            ws_n = comp_weights[:, 0::3] \
+                 / comp_weights.max()
+            ws_e = comp_weights[:, 1::3] \
+                 / comp_weights.max()
+            ws_u = comp_weights[:, 2::3] \
+                 / comp_weights.max()
+            ws_e = num.array(ws_e[0]).flatten()
+            ws_n = num.array(ws_n[0]).flatten()
+            ws_u = num.array(ws_u[0]).flatten()
+
+            if ws_n.size == 0:
                 continue
 
             distances = target.distance_to(event)
@@ -279,11 +292,25 @@ components).
                 target.get_latlon()[:, 1])[0]
             labels = target.station_names
 
-            item = PlotItem(name='station_distribution-%s' % target.path)
+            item = PlotItem(name='station_distribution-N-%s' % target.path)
             fig, ax, legend = self.plot_station_distribution(
-                azimuths, distances, ws, labels)
-            legend.set_title('Weight')
+                azimuths, distances, ws_n, labels)
+            legend.set_title('Weight, N components')
 
+            yield (item, fig)
+            
+            item = PlotItem(name='station_distribution-E-%s' % target.path)
+            fig, ax, legend = self.plot_station_distribution(
+                azimuths, distances, ws_e, labels)
+            legend.set_title('Weight, E components')
+            
+            yield (item, fig)
+            
+            item = PlotItem(name='station_distribution-U-%s' % target.path)
+            fig, ax, legend = self.plot_station_distribution(
+                azimuths, distances, ws_u, labels)
+            legend.set_title('Weight, U components')
+            
             yield (item, fig)
 
 
