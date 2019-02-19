@@ -478,6 +478,7 @@ class BootstrapPlot(PlotConfig):
 
     name = 'bootstrap'
     size_cm = Tuple.T(2, Float.T(), default=(21., 14.9))
+    show_ticks = Bool.T(default=False)
 
     def make(self, environ):
         cm = environ.get_plot_collection_manager()
@@ -518,24 +519,22 @@ functions of the bootstrap start to disagree.
         problem = history.problem
         imodels = num.arange(history.nmodels)
         gms = problem.combine_misfits(history.misfits)**problem.norm_exponent
-        gms_softclip = num.where(gms > 1.0, 
-                                         0.1 * num.log10(gms) + 1.0, 
-                                         gms)
+        gms_softclip = num.where(gms > 1.0,
+                                 0.1 * num.log10(gms) + 1.0,
+                                 gms)
         axes = fig.add_subplot(1, 1, 1)
 
         ibests = []
         for ibootstrap in range(optimiser.nbootstrap):
-            #if ibootstrap ==0:
+            # if ibootstrap ==0:
                 # global, no-bootstrapping misfits, chain
-                #gms = history.bootstrap_misfits[:, ibootstrap]
-                #gms_softclip = num.where(gms > 1.0, 
-                #                         0.1 * num.log10(gms) + 1.0, 
+                # gms = history.bootstrap_misfits[:, ibootstrap]
+                # gms_softclip = num.where(gms > 1.0,
+                #                         0.1 * num.log10(gms) + 1.0,
                 #                         gms)
-                
+
             bms = history.bootstrap_misfits[:, ibootstrap]
-            
             isort_bms = num.argsort(bms)[::-1]
-            
             ibests.append(isort_bms[-1])
 
             bms_softclip = num.where(

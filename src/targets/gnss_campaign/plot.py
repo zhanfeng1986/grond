@@ -142,44 +142,34 @@ displacements derived from best rupture model (red).
                 show_rivers=self.show_rivers,
                 color_wet=(216, 242, 254),
                 color_dry=(238, 236, 230))
-            
-            for s in campaign.stations + model_camp.stations:
-                if s.east and s.north and s.up:
-                    offset_scale = num.array(
-                        [num.sqrt(s.east.shift**2 + \
-                                  s.north.shift**2 + \
-                                  s.up.shift**2)]).max()
-                elif s.east and s.north and not s.up:
-                    offset_scale = num.array(
-                        [num.sqrt(s.east.shift**2 + \
-                                  s.north.shift**2)]).max()
-              
-            if vertical:
-                m.add_gnss_campaign(campaign, psxy_style={
+
+            all_stations = campaign.stations + model_camp.stations
+            offset_scale = num.zeros(len(all_stations))
+
+            for ista, sta in enumerate(all_stations):
+                for comp in sta.components.values():
+                    offset_scale[ista] += comp.shift
+            offset_scale = num.sqrt(offset_scale**2).max()
+
+            m.add_gnss_campaign(
+                campaign,
+                psxy_style={
                     'G': 'black',
                     'W': '0.8p,black',
-                    },
-                    offset_scale=offset_scale, vertical=True)
+                },
+                offset_scale=offset_scale,
+                vertical=vertical)
 
-                m.add_gnss_campaign(model_camp, psxy_style={
+            m.add_gnss_campaign(
+                model_camp,
+                psxy_style={
                     'G': 'red',
                     'W': '0.8p,red',
                     't': 30,
-                    },
-                    offset_scale=offset_scale, vertical=True, labels=False)
-            else:
-                m.add_gnss_campaign(campaign, psxy_style={
-                    'G': 'black',
-                    'W': '0.8p,black',
-                    },
-                    offset_scale=offset_scale)
-
-                m.add_gnss_campaign(model_camp, psxy_style={
-                    'G': 'red',
-                    'W': '0.8p,red',
-                    't': 30,
-                    },
-                    offset_scale=offset_scale, labels=False)
+                },
+                offset_scale=offset_scale,
+                vertical=vertical,
+                labels=False)
 
             if isinstance(problem, CMTProblem):
                 from pyrocko import moment_tensor

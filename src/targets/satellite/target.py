@@ -143,6 +143,8 @@ class SatelliteMisfitTarget(gf.SatelliteTarget, MisfitTarget):
 
         self.parameter_values = {}
 
+        self._noise_weight_matrix = None
+
     @property
     def target_ranges(self):
         return self.misfit_config.ranges
@@ -160,6 +162,15 @@ class SatelliteMisfitTarget(gf.SatelliteTarget, MisfitTarget):
     @property
     def nmisfits(self):
         return self.lats.size
+
+    def get_correlated_weights(self):
+        ''' is for L2-norm weighting, the square-rooted, inverse covar '''
+        logger.info('Inverting scene covariance matrix...')
+        if self._noise_weight_matrix is None:
+            self._noise_weight_matrix = splinalg.sqrtm(
+                num.linalg.inv(self.scene.covariance.covariance_matrix))
+
+        return self._noise_weight_matrix
 
     @property
     def noise_weight_matrix(self):

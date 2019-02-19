@@ -45,11 +45,11 @@ def corr_misfits(w_misfits, weight_matrix):
 
     The function stops before doing the last sum.'''
 
-    w_res_dot1 = num.matmul(num.asmatrix(w_misfits), weight_matrix)
+    w_res_dot1 = num.matmul(w_misfits, weight_matrix)
     # For the next dot-product we flatten the weighted residual
     # stack and do a simple multiplication and a reshape
     # (sum is done later, after the applying other weight factors.)
-    w_res_dot1 = w_res_dot1.ravel()
+    w_res_dot1 = num.asarray(w_res_dot1)
     product_w_res = w_res_dot1 * w_res_dot1
 
     return product_w_res.reshape(w_misfits.shape)
@@ -98,7 +98,7 @@ class Problem(Object):
             self.grond_version = __version__
 
         self._target_weights = None
-        self._has_corr_noise = None
+        self._has_corr_noise_targets = None
         self._engine = None
         self._family_mask = None
 
@@ -293,17 +293,6 @@ class Problem(Object):
             return self.make_dependant(
                 xs, self.dependants[i-self.nparameters].name)
 
-    def get_corr_noise_weight(self):
-        ''' boolean list '''
-        self._has_corr_noise = []
-        for itarget, target in enumerate(self.targets):
-            if target.get_noise_weight_matrix() is not None:
-                self._has_corr_noise.append(True)
-            else:
-                self._has_corr_noise.append(False)
-
-        return self._has_corr_noise
-
     def get_target_weights(self):
         if self._target_weights is None:
             self._target_weights = num.concatenate(
@@ -397,6 +386,7 @@ class Problem(Object):
             self, misfits,
             extra_weights=None,
             extra_residuals=None,
+            extra_correlated_weights=dict(),
             get_contributions=False):
 
         '''
@@ -418,6 +408,9 @@ class Problem(Object):
             to the residuals, indexed as
             ``extra_residuals[ibootstrap, iresidual]``.
 
+        :param extra_correlation: if given a dictionary of
+            ``imisfit: correlated weight matrix`` has to be passed.
+
         :param get_contributions: get the weighted and perturbed contributions
             (don't do the sum).
 
@@ -436,6 +429,7 @@ class Problem(Object):
                     misfits,
                     extra_weights,
                     extra_residuals,
+                    extra_correlated_weights,
                     get_contributions)[0, ...]
 
         assert misfits.ndim == 3
@@ -443,146 +437,67 @@ class Problem(Object):
         assert extra_residuals is None or extra_residuals.ndim == 2
 
         nmodels = misfits.shape[0]
+        nmisfits = misfits.shape[-2]
 
-        if extra_weights is not None or extra_residuals is not None:
+        if extra_weights is not None \
+                or extra_residuals is not None \
+                or extra_correlated_weights:
+
             if extra_weights is not None:
-
                 w = extra_weights[num.newaxis, :, :] \
                     * self.get_target_weights()[num.newaxis, num.newaxis, :]
             else:
-                w = 1.0
+                w = num.ones(1)
 
             if extra_residuals is not None:
-                r = extra_residuals[num.newaxis, :, :]
+                r = extra_residuals[num.newaxis, :, :, num.newaxis]
 
             else:
-                r = 0.0
-            # print('ms', misfits[:, :, 0])
-            # print('sz w', num.shape(w))
+                r = num.zeros(1)
 
-            # print('!achtung r == 0')
-            # r = 0
-            # first step apply the 1-factor weights
-            w_res = w * (misfits[:, num.newaxis, :, 0] + r)
-            w_norms = w * (misfits[:, num.newaxis, :, 1] + r)
-            self.get_corr_noise_weight()
-            if self._has_corr_noise.count(True) > 0:
-                ''' road to take if not avoidable '''
+            w_mf = w[..., num.newaxis] * (misfits[:, num.newaxis, :, :] + r)
+            w_combined_res = w_mf[..., 0]
+            w_combined_norms = w_mf[..., 1]
 
-                # looping over all targets may be a bad idea.
-                # let's sort 'easy' targets and 'dueffikult' ones
-                # here flags for 'easy' target
-                misfit_idx = num.cumsum(
-                    [0.] + [t.nmisfits for t in self.targets])
+            msk = num.ones(nmisfits, dtype=num.bool)
 
-                # fill in the weighted res` AND apply norm for uncorr targets!
-                w_combined_res = exp(w_res)
-                w_combined_norms = exp(w_norms)
+            for idx1, corr_weight_mat in extra_correlated_weights.items():
 
-                # print('wres',w_combined_res, num.shape(w_combined_res[0,0,:]))
-                # print('wnorm',w_combined_norms.shape)
-                # print('comb _w', w[0, :])
-                if nmodels == 1:
-                    # print('effiziente?')
-                    # per single model tested
-                    for itarget, target in enumerate(self.targets):
-                        if not self._has_corr_noise[itarget]:
-                            continue
+                idx2 = idx1 + corr_weight_mat.shape[0]
+                msk[idx1:idx2] = False
 
-                        idx1 = misfit_idx[itarget]
-                        idx2 = misfit_idx[itarget+1]
-                        # misfits aus array klauben
+                for imodel in range(nmodels):
 
-                        wms = w_res[:, :, idx1:idx2]
-                        wns = w_norms[:, :, idx1:idx2]
+                    wms = w_combined_res[imodel, :, idx1:idx2]
+                    wns = w_combined_norms[imodel, :, idx1:idx2]
 
-                        w_combined_res[:, :, idx1:idx2] = \
-                            corr_misfits(wms, target.noise_weight_matrix)
+                    w_combined_res[imodel, :, idx1:idx2] = \
+                        corr_misfits(wms, corr_weight_mat)
 
-                        w_combined_norms[:, :, idx1:idx2] = \
-                            corr_misfits(wns, target.noise_weight_matrix)
+                    w_combined_norms[imodel, :, idx1:idx2] = \
+                        corr_misfits(wns, corr_weight_mat)
 
-                    # the cream on top - the family weighting
-                    w_ns = w_combined_norms[0, 0, :]
-                    w_fams = self.inter_family_weights2(
-                        w_ns[num.newaxis, :])[:, num.newaxis, :]
+            # Family weighting
+            w_fams = self.inter_family_weights2(w_combined_norms[:, 0, :])
+            w_combined_res *= w_fams[:, num.newaxis, :]
+            w_combined_norms *= w_fams[:, num.newaxis, :]
 
-                    w_combined_res = w_combined_res * w_fams
-                    w_combined_norms = w_combined_norms * w_fams
+            w_combined_res[:, :, msk] = exp(w_combined_res[:, :, msk])
+            w_combined_norms[:, :, msk] = exp(w_combined_norms[:, :, msk])
 
-                    assert w_combined_res[w_combined_res < 0].size == 0
+            if get_contributions:
+                return w_combined_res / num.nansum(w_combined_norms,
+                                                   axis=2)[:, :, num.newaxis]
 
-                    if get_contributions:
-                        res = w_combined_res[0, 0, :] \
-                            / num.sum(w_combined_norms, axis=2)[0, 0]
-                    else:
-                        res = root(num.sum(w_combined_res, axis=2)
-                                   / num.sum(w_combined_norms, axis=2))
-                    return res
+            res = root(
+                num.nansum(w_combined_res, axis=2) /
+                num.nansum(w_combined_norms, axis=2))
 
-                else:
-                    # same as before but for a pile of misfits.
-                    # The matrix calculation does not work for
-                    # (nmodels, nchains, ntarget)-sized misfits.
-                    # So here is comes a miserable loop over
-
-                    # mf0_pile = num.zeros_like(w_res.shape[0:2])
-
-                    for itarget, target in enumerate(self.targets):
-                        if not self._has_corr_noise[itarget]:
-                            continue
-
-                        idx1 = misfit_idx[itarget]
-                        idx2 = misfit_idx[itarget+1]
-
-                        for imodel in range(nmodels):
-                            wms = w_res[imodel, :, idx1:idx2]
-                            wns = w_norms[imodel, :, idx1:idx2]
-
-                            w_combined_res[imodel, :, idx1:idx2] = \
-                                corr_misfits(wms, target.noise_weight_matrix)
-
-                            w_combined_norms[imodel, :, idx1:idx2] = \
-                                corr_misfits(wns, target.noise_weight_matrix)
-
-                    # the cream on top - the family weighting
-                    for imodel in num.arange(nmodels):
-                        w_ns = w_combined_norms[imodel, 0, :]
-                        w_fams = self.inter_family_weights2(
-                                   w_ns[num.newaxis, :])[:, num.newaxis, :]
-                        w_combined_res[imodel, :, :] *= w_fams[0, ...]
-                        w_combined_norms[imodel, :, :] *= w_fams[0, ...]
-
-                    if get_contributions:
-                        res = root(w_combined_res
-                                   / num.sum(w_combined_norms, axis=2))
-                        return res
-                    else:
-                        res = root(num.sum(w_combined_res, axis=2)
-                                   / num.sum(w_combined_norms, axis=2)) 
-                        return res
-
-            else:
-                # no correlated noise present in dataset
-
-                if get_contributions:
-                    return exp(w*(misfits[:, num.newaxis, :, 0]+r)) \
-                               / num.nansum(
-                                    exp(w*misfits[:, num.newaxis, :, 1]),
-                                    axis=2)[:, :, num.newaxis]
-
-                res = root(
-                    num.nansum(exp(w*(misfits[:, num.newaxis, :, 0]+r)),
-                               axis=2) /
-                    num.nansum(exp(w*(misfits[:, num.newaxis, :, 1])), axis=2))
-
-                assert res[res < 0].size == 0
-                return res
+            assert res[res < 0].size == 0
+            return res
 
         else:
             # no-nothing-special targets
-            # self.get_corr_noise_weight()
-
             w = self.get_target_weights()[num.newaxis, :] \
                 * self.inter_family_weights2(misfits[:, :, 1])
 

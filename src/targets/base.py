@@ -153,6 +153,9 @@ class MisfitTarget(Object):
         else:
             return self.noise_weight_matrix
 
+    def get_correlated_weights(self):
+        pass
+
     def set_bootstrap_weights(self, weights):
         self.bootstrap_weights = weights
 
