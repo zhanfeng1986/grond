@@ -94,7 +94,7 @@ class Capture(object):
 
 
 def grond(*args, tee=False):
-    # tee = True
+    tee = True
     cap = Capture(tee=tee)
     with cap:
         main(['grond'] + list(args))
@@ -124,7 +124,7 @@ def get_rundir_paths(config_path, event_names):
 
     rundir_paths = []
     for event_name in event_names:
-        env.set_current_event_name(event_name)
+        env.set_current_name(event_name)
         problem_name = env.get_problem().name
         rundir_paths.append(expand_template(
             conf.rundir_template,
