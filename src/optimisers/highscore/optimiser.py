@@ -608,12 +608,11 @@ class HighScoreOptimiser(Optimiser):
                 isok_mask = None
 
             misfits = problem.misfits(sample.model, mask=isok_mask)
-
+            fly = True
             bootstrap_misfits = problem.combine_misfits(
                 misfits,
                 extra_weights=self.get_bootstrap_weights(problem),
                 extra_residuals=self.get_bootstrap_residuals(problem))
-
             isbad_mask_new = num.isnan(misfits[:, 0])
             if isbad_mask is not None and num.any(
                     isbad_mask != isbad_mask_new):
