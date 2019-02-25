@@ -131,11 +131,10 @@ class GNSSCampaignMisfitTarget(gf.GNSSCampaignTarget, MisfitTarget):
 
     def set_dataset(self, ds):
         MisfitTarget.set_dataset(self, ds)
-        
+
     @property
     def noise_weight_matrix(self):
         if self.weights is not None:
-            
             return self.weights
 
     @property
@@ -166,41 +165,39 @@ class GNSSCampaignMisfitTarget(gf.GNSSCampaignTarget, MisfitTarget):
         The single component variances, and if provided the component
         covariances, are used to build a data variance matrix or
         variance-covariance matrix. 
-        
+
         This matrix has the size for all possible NEU components, but throws zeros for not given components, also recorded in the _station_component_mask.
         """
         if self._weights is None:
             covar = self.campaign.get_covariance_matrix()
-            
+
             if not num.any(covar.diagonal()):
                 logger.warning('GNSS Stations have an empty covariance matrix.'
                                ' Weights will be all equal.')
                 num.fill_diagonal(covar, 1.)
-                
-            
+
             #inv_reduc = num.linalg.pinv(num.asmatrix(cov_reduc)
             # inverse of non-zero elements not working, so two steps
             # a) reduction to valid rows and columns
             # b) insertion in full matrix
-            
+
             comp_at = num.nonzero(self._station_component_mask==True)
             cov_reduc = covar[comp_at]
             cov_reduc = cov_reduc[:, comp_at]
-            
-            
+
             inv_reduc = num.asmatrix(cov_reduc).I
             root_inv_reduc = sp_linalg.sqrtm(inv_reduc)
-            
+
             w = num.matrix(num.zeros(num.shape(covar)))
             count = 0
-            
+
             for icomp, c_mask in enumerate(self._station_component_mask):
                 if c_mask:
                     w[icomp, comp_at] = inv_reduc[:, count].T
                     count += 1
-                   
+
             self._weights = w  
-            
+
         return self._weights
 
     @property
@@ -213,7 +210,7 @@ class GNSSCampaignMisfitTarget(gf.GNSSCampaignTarget, MisfitTarget):
     def station_weights(self):
         weights = num.diag(self.weights)
         return num.mean([weights[0::3], weights[1::3], weights[2::3]], axis=0)
-    
+
     def component_weights(self):
         ws = num.sum(self.weights, axis=0)
         return ws
