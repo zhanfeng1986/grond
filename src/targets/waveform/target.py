@@ -6,7 +6,7 @@ import numpy as num
 
 from pyrocko import gf, trace, weeding, util
 from pyrocko.guts import (Object, String, Float, Bool, Int, StringChoice,
-                          Timestamp, List)
+                          Timestamp, List, Dict)
 from pyrocko.guts_array import Array
 
 from grond.dataset import NotFound
@@ -15,8 +15,37 @@ from grond.meta import GrondError, nslcs_to_patterns
 from ..base import (MisfitConfig, MisfitTarget, MisfitResult, TargetGroup)
 from grond.meta import has_get_plot_classes
 
+from pyrocko import crust2x2
+from string import Template
+
 guts_prefix = 'grond'
 logger = logging.getLogger('grond.targets.waveform.target')
+
+
+class StoreIDSelector(Object):
+    pass
+
+
+class Crust2StoreIDSelector(StoreIDSelector):
+    template = String.T(help='template for gf store ID,\
+                              for example crust2_${id}')
+
+    def get_store_id(self, event, st, cha):
+        s = Template(self.template)
+        return s.substitute(id=(
+            crust2x2.get_profile(event.lat, event.lon)._ident).lower())
+
+
+class StationDictStoreIDSelector(StoreIDSelector):
+    dict_st_gfid = Dict.T(help='Dictionary with station-gfdb pairs')
+
+    def get_store_id(self, event, st, cha):
+        try:
+            store_id = self.dict_st_gfid['%s.%s' % (st.network, st.station)]
+        except KeyError:
+            store_id = self.dict_st_gfid['others']
+
+        return store_id
 
 
 class DomainChoice(StringChoice):
@@ -122,6 +151,9 @@ class WaveformTargetGroup(TargetGroup):
         optional=True,
         help="set channels to include, e.g. ['Z', 'T']")
     misfit_config = WaveformMisfitConfig.T()
+    store_id_selector = StoreIDSelector.T(
+        optional=True,
+        help='select GF store based on event-station geometry.')
 
     def get_targets(self, ds, event, default_path='none'):
         logger.debug('Selecting waveform targets...')
@@ -133,6 +165,12 @@ class WaveformTargetGroup(TargetGroup):
 
                 nslc = st.nsl() + (cha,)
 
+                if self.store_id_selector:
+                    store_id = self.store_id_selector.get_store_id(
+                        event, st, cha)
+                else:
+                    store_id = self.store_id
+
                 target = WaveformMisfitTarget(
                     quantity='displacement',
                     codes=nslc,
@@ -140,7 +178,7 @@ class WaveformTargetGroup(TargetGroup):
                     lon=st.lon,
                     depth=st.depth,
                     interpolation=self.interpolation,
-                    store_id=self.store_id,
+                    store_id=store_id,
                     misfit_config=self.misfit_config,
                     manual_weight=self.weight,
                     normalisation_family=self.normalisation_family,
@@ -705,6 +743,9 @@ def weed(origin, targets, limit, neighborhood=3):
 
 
 __all__ = '''
+    StoreIDSelector
+    Crust2StoreIDSelector
+    StationDictStoreIDSelector    
     WaveformTargetGroup
     WaveformMisfitConfig
     WaveformMisfitTarget
